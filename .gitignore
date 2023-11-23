@@ -5,3 +5,4 @@
 /.vs
 /__vm
 /sonar.vcxproj.user
+/Credentials.h
