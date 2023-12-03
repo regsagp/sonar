@@ -1,90 +1,127 @@
-//#define USE_VOLT
 //#define USE_WIFI
 //#define USE_SERIAL
 
 #include <ESP8266WiFi.h> // for WiFi.forceSleepBegin();
 
-#ifdef PRESCALER
-#include <prescaler.h>
-#else
-#define rescaleTime(A) A
-#define rescaleDuration(A) A
-#endif
-#include "pins.h"
 
-//#define delayMicroseconds delay
-#define NEW_PING 1
-#define ULTRASONIC 2
-#define SIMPLE 3
+#include "pins.h"
+#include "setup.h"
+#include <PolledTimeout.h>
 
 #define SONAR_LIB SIMPLE
 
-#ifdef PRESCALER
-inline unsigned long trueMicros()
-{
-  return micros() * getClockDivisionFactor();
-}
-
-#define millis trueMillis
-#define micros trueMicros
-#endif
-
-#ifdef USE_VOLT
-#include <CPUVolt.h>
-#endif
-
-#if SONAR_LIB == NEW_PING
-#include <NewPing.h>
-// указываем пины и макс. расстояние в сантиметрах
-NewPing sonar(HC_TRIG, HC_ECHO, 200);
-#elif SONAR_LIB == ULTRASONIC 
-#include <Ultrasonic.h>
-Ultrasonic sonic(HC_TRIG, HC_ECHO);
-#elif SONAR_LIB == SIMPLE 
-#else 
-#error("Unexpected SONAR_LIB")
-#endif
-
+#define SONAR_TIMEOUT 1000
+#define VCC_TIMEOUT 10*1000
 
 #define CLOSED_DIST 110
 #define HAS_HUMAN(x) (x < CLOSED_DIST - 30 && x > 20)
 #define LED_OFF_DELAY 5000
 const int MIN_VOLTAGE_MV = 3200;
-const int SLEEP_VOLTAGE_MV = 3000;
+const int SLEEP_VOLTAGE_MV = 3100;
 
 float distFilt = 0;
+esp8266::polledTimeout::periodicMs vccTimeout(VCC_TIMEOUT);  
+esp8266::polledTimeout::periodicMs sonarTimeout(SONAR_TIMEOUT);  
+esp8266::polledTimeout::periodicMs idleTimeout(10000);  // don't sleep while timer not expired
 uint32_t tmr_led;
 uint32_t tmr_led_off;
 uint32_t tmr_print;
-uint32_t tmr_volts;
+//uint32_t tmr_volts;
 int led_val = 0;
 bool dir = true;
-signed long millivolts;
+int millivolts;
 bool led_on;
 
-void setup() {
-  #ifdef PRESCALER
-  setClockPrescaler(CLOCK_PRESCALER_2);
-  #endif
-#ifdef USE_SERIAL
-  Serial.begin(rescaleTime(115200));       // для связи
+void platform_setup() {
+#ifdef PRESCALER
+    setClockPrescaler(CLOCK_PRESCALER_2);
 #endif
-  pinMode(LED, OUTPUT);
+}
+
+void setup() {
+    pinMode(LED, OUTPUT);
+    digitalWrite(LED, LED_OFF);
+    pinMode(WAKE_UP_PIN, INPUT_PULLUP);  // polled to advance tests, interrupt for Forced Light Sleep
+
+    platform_setup();
+
+#ifdef USE_SERIAL
+    Serial.begin(rescaleTime(115200));       // для связи
+    delay(50);
+#endif
 
 #ifdef USE_WIFI
-  setup_wifi();
+    setup_wifi();
 #else
-  WiFi.forceSleepBegin();
+    WiFi.forceSleepBegin();
 #endif
+
+    WiFi.setSleepMode(WIFI_LIGHT_SLEEP, 3); // Automatic Light Sleep, DTIM listen interval = 3
+    // at higher DTIM intervals you'll have a hard time establishing and maintaining a connection
 
 #if SONAR_LIB == SIMPLE
-  pinMode(HC_TRIG, OUTPUT); // trig выход
-  pinMode(HC_ECHO, INPUT);  // echo вход
+    pinMode(HC_TRIG, OUTPUT); // trig выход
+    pinMode(HC_ECHO, INPUT);  // echo вход
 #endif
 
-  //pinMode(LED_BUILTIN, OUTPUT);
-  // using LED_BUILTIN confilcts with NewPing timer
-  //digitalWrite(LED_BUILTIN, LOW);
+    if (LED == LED_BUILTIN) {
+        digitalWrite(LED_BUILTIN, LOW);
+    }
+    //pinMode(LED_BUILTIN, OUTPUT);
+    // using LED_BUILTIN confilcts with NewPing timer
+}
+
+void wakeupCallback() {  // unlike ISRs, you can do a print() from a callback function
+    //testPoint_LOW;         // testPoint tracks latency from WAKE_UP_PIN LOW to testPoint LOW
+    //printMillis();         // show time difference across sleep; millis is wrong as the CPU eventually stops
+    DebugPrintln(F("Woke from Light Sleep - this is the callback"));
+}
+
+// when door is closed, button must be unpressed (pressing button must cause to waking up)
+bool IsDoorClosed() {
+    return digitalRead(WAKE_UP_PIN) != 0;
+}
+
+void light_sleep(int delay_ms) {
+    delay(200); delay_ms -= 200;
+    if (IsDoorClosed()) {
+        DebugPrintln("Going to sleep now");
+
+        digitalWrite(LED, LED_ON);
+        delay(100);
+        digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+        delay(100);
+        digitalWrite(LED, LED_ON);
+        delay(100);
+    }
+    else {
+        DebugPrint("Going to sleep now for "); DebugPrint(delay_ms); DebugPrintln(" ms");
+    }
+
+    Serial.flush();
+    //digitalWrite(LED, HIGH);  // turn the LED off so they know the CPU isn't running
+    digitalWrite(LED, LED_OFF);
+    delay(20);
+
+    if (IsDoorClosed() && idleTimeout.expired()) {
+        wifi_station_disconnect();
+        wifi_set_opmode_current(NULL_MODE);
+        wifi_fpm_set_sleep_type(LIGHT_SLEEP_T); // set sleep type, the above    posters wifi_set_sleep_type() didnt seem to work for me although it did let me compile and upload with no errors 
+        wifi_fpm_open(); // Enables force sleep
+        gpio_pin_wakeup_enable(GPIO_ID_PIN(WAKE_UP_PIN), GPIO_PIN_INTR_LOLEVEL); // GPIO_ID_PIN(2) corresponds to GPIO2 on ESP8266-01 , GPIO_PIN_INTR_LOLEVEL for a logic low, can also do other interrupts, see gpio.h above
+        wifi_fpm_do_sleep(0xFFFFFFF); // Sleep for longest possible time
+        delay(200);
+    }
+    else {
+        WiFi.forceSleepBegin();
+        WiFi.setSleepMode(WIFI_LIGHT_SLEEP, 3); // Automatic Light Sleep, DTIM listen interval = 3
+        //wifi_fpm_do_sleep(delay_ms * 1000);        // Sleep range = 10000 ~ 268,435,454 uS (0xFFFFFFE, 2^28-1)
+        delay(delay_ms + 1);                // delay needs to be 1 mS longer than sleep or it only goes into Modem Sleep
+    }
+    DebugPrintln("Wake up");
+    idleTimeout.reset(); // prevent sleeping immediately after wakeup
+
+    //digitalWrite(LED, LED_OFF);
 }
 
 // функция возвращает скорректированное по CRT значение
@@ -96,7 +133,9 @@ byte getBrightCRT2(byte val) {
   return ((long)val * val * val + 130305) >> 16;
 }
 
-void SwitchLed() {
+/// <summary></summary>
+/// <returns>ms for delay, can sleep</returns>
+std::tuple<int,bool> SwitchLed() {
   uint32_t current_time = millis();
   if (millivolts < MIN_VOLTAGE_MV && millivolts > 100) {
       if (millivolts < SLEEP_VOLTAGE_MV)
@@ -104,7 +143,7 @@ void SwitchLed() {
 
       set_led_mode(3);
       loop_led();
-      return;
+      return { 125, true };
   }
 
   if (distFilt < 200)
@@ -119,43 +158,55 @@ void SwitchLed() {
       else led_val -= step;   // уменьшаем
       if (led_val >= 255 || led_val <= 0) dir = !dir; // разворачиваем
       analogWrite(LED, getBrightCRT(led_val) / 4);
-      //analogWrite(LED_BUILTIN, getBrightCRT(val) / 4);
     }
+    return { 20, false };
   }
   else {
     if (current_time - tmr_led_off > LED_OFF_DELAY) {
-      analogWrite(LED, 0);
-      //analogWrite(LED_BUILTIN, 0);
+      //analogWrite(LED, 0);
+      digitalWrite(LED, LED_OFF); // turn off
     }
   }
+  return { SONAR_TIMEOUT, true };
 }
 
 void loop() {
+
 #ifdef USE_WIFI
     loop_wifi();
 #endif
-    
-    SwitchLed();
 
-  if (millis() - tmr_print >= 400) {
-    float dist = readDist();
-    tmr_print = millis();
-    
+    auto res = SwitchLed();
+    int delayMs = std::get<0>(res);
+    bool can_sleep = std::get<1>(res);
+    if (/*IsDoorClosed() && */can_sleep)
+        light_sleep(delayMs);
+
+    if (sonarTimeout) {
+        float dist = readDist();
+
 #ifdef USE_SERIAL
-    uint32_t current_time = tmr_print;
-    Serial.print("led=");       Serial.print(current_time - tmr_led_off > LED_OFF_DELAY ? 0 : current_time - tmr_led_off);
-    Serial.print(", dist=");    Serial.print(distFilt);
-    Serial.print(", ");         Serial.print(dist);
-    Serial.print(", voltage: "); Serial.print(millivolts); Serial.print(", esp: "); Serial.println(ESP.getVcc());
+        uint32_t current_time = tmr_print;
+        Serial.print("led=");       Serial.print(current_time - tmr_led_off > LED_OFF_DELAY ? 0 : current_time - tmr_led_off);
+        Serial.print(", dist=");    Serial.print(distFilt);
+        Serial.print(", raw=");         Serial.println(dist);
+        delay(20);
+        Serial.print(", voltage: "); Serial.print(millivolts); Serial.print(", door closed: "); Serial.println(IsDoorClosed()); //Serial.print(", esp: "); Serial.println((int)ESP.getVcc());
 #endif
-  }
+    }
 
-  if (millis() - tmr_volts >= 1 * 1000) {
-    tmr_volts = millis();
+    if (vccTimeout) {
+        readVCC();
+    }
+    //delay(50); // what for? causes led blink is not smooth
+}
+
+void readVCC() {
+    //tmr_volts = millis();
     long vcc = 0;
 #ifdef USE_VOLT
     vcc = readVcc();
-  #endif
+#endif
 
     // read the input on analog pin 0:
     int sensorValue = analogRead(A0);
@@ -171,11 +222,7 @@ void loop() {
         millivolts = vcc;
 
     //Serial.print(", voltage: "); Serial.println(sensorValue);
-  }
 }
-
-float newPingDist;
-
 
 float readDist() {
 #if SONAR_LIB == NEW_PING

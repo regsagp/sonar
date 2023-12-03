@@ -15,16 +15,20 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="sonar.ino" />
-    <None Include="blink_led.ino" />
-    <None Include="wifi_test.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.sonar.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pins.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="setup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="blink_led.ino" />
+    <ClCompile Include="sonar.ino" />
+    <ClCompile Include="wifi_test.ino" />
+    <ClCompile Include="arduino.ino" />
   </ItemGroup>
 </Project>

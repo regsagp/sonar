@@ -19,6 +19,12 @@
 //const char* ssid = STASSID;
 const char* password = pass;
 
+//#ifdef USE_WIFI
+WiFiEventHandler stationConnectedHandler;
+WiFiEventHandler stationDisconnectedHandler;
+WiFiEventHandler stationModeGotIP;
+//#endif
+
 // Create an instance of the server
 // specify the port to listen on as an argument
 WiFiServer server(80);
@@ -36,6 +42,24 @@ void setup_wifi() {
     WiFi.begin(ssid, password);
 
 
+    // Register event handlers.
+    //WiFiEventHandler onStationModeConnected(std::function<void(const WiFiEventStationModeConnected&)>);
+    //WiFiEventHandler onStationModeDisconnected(std::function<void(const WiFiEventStationModeDisconnected&)>);
+    //WiFiEventHandler onStationModeAuthModeChanged(std::function<void(const WiFiEventStationModeAuthModeChanged&)>);
+    //WiFiEventHandler onStationModeGotIP(std::function<void(const WiFiEventStationModeGotIP&)>);
+
+    // Callback functions will be called as long as these handler objects exist.
+    // Call "onStationConnected" each time a station connects
+    stationConnectedHandler = WiFi.onStationModeConnected(&onStationConnected);
+    // Call "onStationDisconnected" each time a station disconnects
+    stationDisconnectedHandler = WiFi.onStationModeDisconnected(&onStationDisconnected);
+    // Call "onProbeRequestPrint" and "onProbeRequestBlink" each time
+    // a probe request is received.
+    // Former will print MAC address of the station and RSSI to Serial,
+    // latter will blink an LED.
+    stationModeGotIP = WiFi.onStationModeGotIP(&onStationModeGotIP);
+
+    /*
     int n_repeats = 240; // 120 sec
     while (true) {
         if (millis() - tmr_wifi_connect >= 500) {
@@ -56,7 +80,12 @@ void setup_wifi() {
         Serial.println(F("WiFi NOT connected"));
         return;
     }
+    OnConnected();
+    */
 
+}
+
+void OnConnected() {
     Serial.println();
     Serial.println(F("WiFi connected"));
 
@@ -68,9 +97,48 @@ void setup_wifi() {
     Serial.println(WiFi.localIP());
 }
 
+bool blinkFlag;
+bool connected;
+
+String macToString(const unsigned char* mac) {
+    char buf[20];
+    snprintf(buf, sizeof(buf), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return String(buf);
+}
+
+void onStationConnected(const WiFiEventStationModeConnected& evt) {
+    Serial.print("Station connected on channel: ");
+    Serial.println(evt.channel);
+    connected = true;
+}
+
+void onStationDisconnected(const WiFiEventStationModeDisconnected& evt) {
+    if (connected) {
+        Serial.print("Station disconnected by reason: ");
+        Serial.println(evt.reason);
+    }
+    connected = false;
+}
+
+void onStationModeGotIP(const WiFiEventStationModeGotIP& evt) {
+    Serial.print("Station got ip: ");
+    Serial.println(evt.ip);
+    // We can't use "delay" or other blocking functions in the event handler.
+    // Therefore we set a flag here and then check it inside "loop" function.
+    //blinkFlag = true;
+}
+
+esp8266::polledTimeout::periodicMs printTimeout(1000);
+
 void loop_wifi() {
+    if (!connected) {
+        if(printTimeout)
+            Serial.println("wifi not connected");
+        return;
+    }
+
     // Check if a client has connected
-    WiFiClient client = server.available();
+    WiFiClient client = server.accept();
     if (!client) {
         return;
     }
@@ -125,12 +193,12 @@ void loop_wifi() {
                 Serial.println("no available data");
                 //break;
             }
+            yield;
         }
-        // закрываем соединение с клиентом:
+        // close client
         delay(1);
         client.stop();
         Serial.println("Client disconnected.");
-        //  "Клиент отключен."
     }
 
 
