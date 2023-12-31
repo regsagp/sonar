@@ -1,3 +1,5 @@
+#ifdef USE_WIFI
+
 /*
     This sketch demonstrates how to set up a simple HTTP-like server.
     The server will set a GPIO pin depending on the request
@@ -255,3 +257,4 @@ void loop_wifi() {
     Serial.println(F("} Disconnecting from client"));
     */
 }
+#endif

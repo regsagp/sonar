@@ -1,5 +1,5 @@
 //#define USE_WIFI
-//#define USE_SERIAL
+#define USE_SERIAL
 
 #include <ESP8266WiFi.h> // for WiFi.forceSleepBegin();
 
@@ -31,6 +31,7 @@ int led_val = 0;
 bool dir = true;
 int millivolts;
 bool led_on;
+int prevDoorClosed;
 
 void platform_setup() {
 #ifdef PRESCALER
@@ -69,6 +70,7 @@ void setup() {
     }
     //pinMode(LED_BUILTIN, OUTPUT);
     // using LED_BUILTIN confilcts with NewPing timer
+    prevDoorClosed = -1;
 }
 
 void wakeupCallback() {  // unlike ISRs, you can do a print() from a callback function
@@ -84,7 +86,11 @@ bool IsDoorClosed() {
 
 void light_sleep(int delay_ms) {
     delay(200); delay_ms -= 200;
-    if (IsDoorClosed()) {
+    if (delay_ms < 0)
+        delay_ms = 200;
+
+    bool isIdle = idleTimeout.expired();
+    if (IsDoorClosed() && isIdle) {
         DebugPrintln("Going to sleep now");
 
         digitalWrite(LED, LED_ON);
@@ -95,7 +101,7 @@ void light_sleep(int delay_ms) {
         delay(100);
     }
     else {
-        DebugPrint("Going to sleep now for "); DebugPrint(delay_ms); DebugPrintln(" ms");
+        DebugPrint("idle = "); DebugPrint(isIdle); DebugPrint(", Going to sleep now for "); DebugPrint(delay_ms); DebugPrintln(" ms");
     }
 
     Serial.flush();
@@ -103,7 +109,7 @@ void light_sleep(int delay_ms) {
     digitalWrite(LED, LED_OFF);
     delay(20);
 
-    if (IsDoorClosed() && idleTimeout.expired()) {
+    if (IsDoorClosed() && isIdle) {
         wifi_station_disconnect();
         wifi_set_opmode_current(NULL_MODE);
         wifi_fpm_set_sleep_type(LIGHT_SLEEP_T); // set sleep type, the above    posters wifi_set_sleep_type() didnt seem to work for me although it did let me compile and upload with no errors 
@@ -119,7 +125,7 @@ void light_sleep(int delay_ms) {
         delay(delay_ms + 1);                // delay needs to be 1 mS longer than sleep or it only goes into Modem Sleep
     }
     DebugPrintln("Wake up");
-    idleTimeout.reset(); // prevent sleeping immediately after wakeup
+    idleTimeout.expired(); // reset if expired to prevent sleeping immediately after wakeup
 
     //digitalWrite(LED, LED_OFF);
 }
@@ -134,7 +140,7 @@ byte getBrightCRT2(byte val) {
 }
 
 /// <summary></summary>
-/// <returns>ms for delay, can sleep</returns>
+/// <returns>ms for delay (125-low bat, 20-blink, 1000-survey), can sleep</returns>
 std::tuple<int,bool> SwitchLed() {
   uint32_t current_time = millis();
   if (millivolts < MIN_VOLTAGE_MV && millivolts > 100) {
@@ -170,11 +176,25 @@ std::tuple<int,bool> SwitchLed() {
   return { SONAR_TIMEOUT, true };
 }
 
+
 void loop() {
 
 #ifdef USE_WIFI
     loop_wifi();
 #endif
+
+    if (prevDoorClosed < 0)
+        prevDoorClosed = IsDoorClosed();
+    else if (prevDoorClosed != IsDoorClosed()) {
+        if (prevDoorClosed == false)
+        {
+            // blink one time if door is just closed
+            digitalWrite(LED, LED_ON);
+            delay(100);
+            digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+        }
+        prevDoorClosed = IsDoorClosed();
+    }
 
     auto res = SwitchLed();
     int delayMs = std::get<0>(res);
