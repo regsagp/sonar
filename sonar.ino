@@ -1,11 +1,13 @@
 //#define USE_WIFI
 #define USE_SERIAL
+//#define USE_DISPLAY
 
 #include <ESP8266WiFi.h> // for WiFi.forceSleepBegin();
 
 
 #include "pins.h"
 #include "setup.h"
+//#include "display.h"
 #include <PolledTimeout.h>
 
 #define SONAR_LIB SIMPLE
@@ -13,8 +15,10 @@
 #define SONAR_TIMEOUT 1000
 #define VCC_TIMEOUT 10*1000
 
-#define CLOSED_DIST 110
-#define HAS_HUMAN(x) (x < CLOSED_DIST - 30 && x > 20)
+//#define CLOSED_DIST 110
+//#define HAS_HUMAN(x) (x < CLOSED_DIST - 30 && x > 20)
+#define NOHUMAN_DIST 150
+#define HAS_HUMAN(x) (x < NOHUMAN_DIST - 20 || x > NOHUMAN_DIST + 20)
 #define LED_OFF_DELAY 5000
 const int MIN_VOLTAGE_MV = 3200;
 const int SLEEP_VOLTAGE_MV = 3100;
