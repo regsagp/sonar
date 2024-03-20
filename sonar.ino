@@ -1,4 +1,6 @@
-//#define USE_WIFI
+#define USE_WIFI
+//#include <TM1637.h>
+#include <dummy.h>
 #define USE_SERIAL
 //#define USE_DISPLAY
 
@@ -7,23 +9,25 @@
 
 #include "pins.h"
 #include "setup.h"
-//#include "display.h"
+#include "display.h"
 #include <PolledTimeout.h>
 
 #define SONAR_LIB SIMPLE
 
-#define SONAR_TIMEOUT 1000
+#define SONAR_TIMEOUT 1000/2
 #define VCC_TIMEOUT 10*1000
 
 //#define CLOSED_DIST 110
 //#define HAS_HUMAN(x) (x < CLOSED_DIST - 30 && x > 20)
-#define NOHUMAN_DIST 150
-#define HAS_HUMAN(x) (x < NOHUMAN_DIST - 20 || x > NOHUMAN_DIST + 20)
+#define NOHUMAN_DIST 120
+#define HAS_HUMAN(x) (x < NOHUMAN_DIST - 20 || x > NOHUMAN_DIST + 40)
 #define LED_OFF_DELAY 5000
 const int MIN_VOLTAGE_MV = 3200;
 const int SLEEP_VOLTAGE_MV = 3100;
 
 float distFilt = 0;
+float rawDist = 0;
+bool resetDistFilt = false;
 esp8266::polledTimeout::periodicMs vccTimeout(VCC_TIMEOUT);  
 esp8266::polledTimeout::periodicMs sonarTimeout(SONAR_TIMEOUT);  
 esp8266::polledTimeout::periodicMs idleTimeout(10000);  // don't sleep while timer not expired
@@ -49,6 +53,8 @@ void setup() {
     pinMode(WAKE_UP_PIN, INPUT_PULLUP);  // polled to advance tests, interrupt for Forced Light Sleep
 
     platform_setup();
+
+    TM_setup();
 
 #ifdef USE_SERIAL
     Serial.begin(rescaleTime(115200));       // для связи
@@ -143,6 +149,8 @@ byte getBrightCRT2(byte val) {
   return ((long)val * val * val + 130305) >> 16;
 }
 
+int _click_count = 1;
+
 /// <summary></summary>
 /// <returns>ms for delay (125-low bat, 20-blink, 1000-survey), can sleep</returns>
 std::tuple<int,bool> SwitchLed() {
@@ -182,6 +190,8 @@ std::tuple<int,bool> SwitchLed() {
 
 
 void loop() {
+    displayNum((int)distFilt +1+_click_count);
+    _click_count = -_click_count;
 
 #ifdef USE_WIFI
     loop_wifi();
@@ -192,6 +202,7 @@ void loop() {
     else if (prevDoorClosed != IsDoorClosed()) {
         if (prevDoorClosed == false)
         {
+            _click_count++;
             // blink one time if door is just closed
             digitalWrite(LED, LED_ON);
             delay(100);
@@ -203,8 +214,13 @@ void loop() {
     auto res = SwitchLed();
     int delayMs = std::get<0>(res);
     bool can_sleep = std::get<1>(res);
-    if (/*IsDoorClosed() && */can_sleep)
+    resetDistFilt = can_sleep;
+#ifndef USE_WIFI
+    if (/*IsDoorClosed() && */can_sleep) {
         light_sleep(delayMs);
+        //sonarTimeout.resetAndSetExpired();
+    }
+#endif
 
     if (sonarTimeout) {
         float dist = readDist();
@@ -213,15 +229,15 @@ void loop() {
         uint32_t current_time = tmr_print;
         Serial.print("led=");       Serial.print(current_time - tmr_led_off > LED_OFF_DELAY ? 0 : current_time - tmr_led_off);
         Serial.print(", dist=");    Serial.print(distFilt);
-        Serial.print(", raw=");         Serial.println(dist);
-        delay(20);
-        Serial.print(", voltage: "); Serial.print(millivolts); Serial.print(", door closed: "); Serial.println(IsDoorClosed()); //Serial.print(", esp: "); Serial.println((int)ESP.getVcc());
+        Serial.print(", raw=");     Serial.print(dist);
+        delay(10);
+        Serial.print(", voltage: "); Serial.print(millivolts); Serial.print(", door closed: "); Serial.println(IsDoorClosed() ? 1:0); //Serial.print(", esp: "); Serial.println((int)ESP.getVcc());
 #endif
     }
 
-    if (vccTimeout) {
+    if (vccTimeout) 
         readVCC();
-    }
+
     //delay(50); // what for? causes led blink is not smooth
 }
 
@@ -266,16 +282,21 @@ float readDist() {
     float dist = Ultrasonic_read(CM);
     //float dist = sonic.read(CM);
 #elif SONAR_LIB == SIMPLE 
-    float dist = getDist();       // получаем расстояние
+    rawDist = getDist();       // получаем расстояние
 #else 
 #error("Unexpected SONAR_LIB")
 #endif
+    if (rawDist > 2) {
+        if (rawDist > 200)
+            rawDist = 200;
 
-  if (dist > 200)
-    dist = 0;
+        if (resetDistFilt)
+            distFilt = rawDist;
+        else
+            distFilt += (rawDist - distFilt) * 0.2;  // фильтруем
+    }
 
-  distFilt += (dist - distFilt) * 0.2;  // фильтруем
-  return dist;
+    return rawDist;
 }
 
 unsigned long previousMicros;

@@ -26,7 +26,7 @@ WiFiEventHandler stationConnectedHandler;
 WiFiEventHandler stationDisconnectedHandler;
 WiFiEventHandler stationModeGotIP;
 //#endif
-
+int counter;
 // Create an instance of the server
 // specify the port to listen on as an argument
 WiFiServer server(80);
@@ -112,6 +112,8 @@ void onStationConnected(const WiFiEventStationModeConnected& evt) {
     Serial.print("Station connected on channel: ");
     Serial.println(evt.channel);
     connected = true;
+
+    OnConnected();
 }
 
 void onStationDisconnected(const WiFiEventStationModeDisconnected& evt) {
@@ -138,9 +140,9 @@ void loop_wifi() {
             Serial.println("wifi not connected");
         return;
     }
-
+    counter++;
     // Check if a client has connected
-    WiFiClient client = server.accept();
+    WiFiClient client = server.available();// accept();
     if (!client) {
         return;
     }
@@ -151,8 +153,8 @@ void loop_wifi() {
         // чтобы определить конец HTTP-запроса:
         boolean blank_line = true;
 
-        char s_volt[8];
-        dtostrf(millivolts, 3, 2, s_volt);
+        char s_raw_dist[8]; dtostrf(rawDist, 3, 0, s_raw_dist);
+        char s_filt_dist[8];     dtostrf(distFilt, 3, 0, s_filt_dist);
 
         while (client.connected()) {
             //Serial.println("client connected");  //  "Ќовый клиент"
@@ -173,12 +175,16 @@ void loop_wifi() {
                     client.println();
                     client.println("<!DOCTYPE HTML>");
                     client.println("<html>");
-                    client.println("<head><link rel=\"icon\" href=\"data:,\"></head><body><h1>ESP8266</h1><h3>Voltage: ");
-                    client.println(s_volt);
-                    client.println(" mV</h3><h3>esp voltage: ");
-                    client.println(ESP.getVcc()); // works only if A0 not connected
-                    client.println(" mV</h3><h3>room busy: ");
+                    client.println("<head><link rel=\"icon\" href=\"data:,\"></head><body><h1>ESP8266</h1><h3>Raw dist: ");
+                    client.println(s_raw_dist);
+                    client.println(" cm</h3><h3>filt dist: ");
+                    client.println(s_filt_dist); 
+                    client.println(" cm </h3><h3>room busy: ");
                     client.println(led_on);
+                    client.println(" </h3><h3>voltage: ");
+                    client.println(millivolts);
+                    client.println("mV</h3><h3>counter: ");
+                    client.println(counter);
                     client.println("</h3></body></html>");
                     break;
                 }
@@ -192,7 +198,7 @@ void loop_wifi() {
                 }
             }
             else {
-                Serial.println("no available data");
+                //Serial.println("no available data");
                 //break;
             }
             yield;
