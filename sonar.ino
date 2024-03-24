@@ -94,6 +94,35 @@ bool IsDoorClosed() {
     return digitalRead(WAKE_UP_PIN) != 0;
 }
 
+enum LedMode {
+    LM_OFF = 0,
+    LM_SLEEP,
+    LM_DOOR_CLOSED
+};
+
+LedMode _ledMode = LedMode::LM_OFF;
+
+void updateLed(LedMode mode) {
+    switch (mode) {
+    case LM_SLEEP:
+        digitalWrite(LED, LED_ON);
+        delay(100);
+        digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+        delay(100);
+        digitalWrite(LED, LED_ON);
+        delay(100);
+        digitalWrite(LED, LED_OFF);
+        break;
+    case LM_DOOR_CLOSED:
+        // blink one time if door is just closed
+        digitalWrite(LED, LED_ON);
+        delay(100);
+        digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+        break;
+    }
+
+}
+
 void light_sleep(int delay_ms) {
     delay(200); delay_ms -= 200;
     if (delay_ms < 0)
@@ -102,21 +131,15 @@ void light_sleep(int delay_ms) {
     bool isIdle = idleTimeout.expired();
     if (IsDoorClosed() && isIdle) {
         DebugPrintln("Going to sleep now");
-
-        digitalWrite(LED, LED_ON);
-        delay(100);
-        digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
-        delay(100);
-        digitalWrite(LED, LED_ON);
-        delay(100);
+        updateLed(LedMode::LM_SLEEP);
     }
     else {
         DebugPrint("idle = "); DebugPrint(isIdle); DebugPrint(", Going to sleep now for "); DebugPrint(delay_ms); DebugPrintln(" ms");
     }
 
     Serial.flush();
-    //digitalWrite(LED, HIGH);  // turn the LED off so they know the CPU isn't running
-    digitalWrite(LED, LED_OFF);
+    
+    //digitalWrite(LED, LED_OFF);
     delay(20);
 
     if (IsDoorClosed() && isIdle) {
@@ -182,7 +205,8 @@ std::tuple<int,bool> SwitchLed() {
   else {
     if (current_time - tmr_led_off > LED_OFF_DELAY) {
       //analogWrite(LED, 0);
-      digitalWrite(LED, LED_OFF); // turn off
+        _ledMode = LedMode::LM_OFF;
+      //digitalWrite(LED, LED_OFF); // turn off
     }
   }
   return { SONAR_TIMEOUT, true };
@@ -204,9 +228,10 @@ void loop() {
         {
             _click_count++;
             // blink one time if door is just closed
-            digitalWrite(LED, LED_ON);
-            delay(100);
-            digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+            _ledMode = LedMode::LM_DOOR_CLOSED;
+            //digitalWrite(LED, LED_ON);
+            //delay(100);
+            //digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
         }
         prevDoorClosed = IsDoorClosed();
     }
@@ -239,6 +264,8 @@ void loop() {
         readVCC();
 
     //delay(50); // what for? causes led blink is not smooth
+
+    updateLed(_ledMode);
 }
 
 void readVCC() {
