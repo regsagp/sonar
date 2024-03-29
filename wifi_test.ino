@@ -32,7 +32,8 @@ int counter;
 WiFiServer server(80);
 unsigned long tmr_wifi_connect;
 void setup_wifi() {
-    set_led_mode(4);// two splash
+    _ledMode = LedMode::LM_WIFI_INIT;
+    //set_led_mode(4);// two splash
 
     // Connect to WiFi network
     Serial.println();

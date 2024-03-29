@@ -97,7 +97,9 @@ bool IsDoorClosed() {
 enum LedMode {
     LM_OFF = 0,
     LM_SLEEP,
-    LM_DOOR_CLOSED
+    LM_LOW_BATT,
+    LM_WIFI_INIT,
+    LM_DOOR_CLOSED,
 };
 
 LedMode _ledMode = LedMode::LM_OFF;
@@ -105,6 +107,7 @@ LedMode _ledMode = LedMode::LM_OFF;
 void updateLed(LedMode mode) {
     switch (mode) {
     case LM_SLEEP:
+    case LM_WIFI_INIT:
         digitalWrite(LED, LED_ON);
         delay(100);
         digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
@@ -119,8 +122,13 @@ void updateLed(LedMode mode) {
         delay(100);
         digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
         break;
+    case LM_LOW_BATT:
+        // blink one time if door is just closed
+        digitalWrite(LED, LED_ON);
+        delay(100);
+        digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+        break;
     }
-
 }
 
 void light_sleep(int delay_ms) {
@@ -182,8 +190,9 @@ std::tuple<int,bool> SwitchLed() {
       if (millivolts < SLEEP_VOLTAGE_MV)
           ESP.deepSleep(0);
 
-      set_led_mode(3);
-      loop_led();
+      _ledMode = LedMode::LM_LOW_BATT;
+      //set_led_mode(3);
+      //loop_led();
       return { 125, true };
   }
 
