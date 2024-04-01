@@ -1,5 +1,7 @@
 #pragma once
 
+#define USE_WIFI
+
 #define NEW_PING 1
 #define ULTRASONIC 2
 #define SIMPLE 3

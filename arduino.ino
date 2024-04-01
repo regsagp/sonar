@@ -1,4 +1,4 @@
-﻿//#define USE_VOLT
+//#define USE_VOLT
 
 
 
@@ -13,7 +13,8 @@ inline unsigned long trueMicros()
 #define micros trueMicros
 #endif
 
-#if SONAR_LIB == NEW_PING
+#if SONAR_LIB == SIMPLE
+#elif SONAR_LIB == NEW_PING
 #include <NewPing.h>
 // указываем пины и макс. расстояние в сантиметрах
 NewPing sonar(HC_TRIG, HC_ECHO, 200);
@@ -21,12 +22,11 @@ float newPingDist;
 #elif SONAR_LIB == ULTRASONIC 
 #include <Ultrasonic.h>
 Ultrasonic sonic(HC_TRIG, HC_ECHO);
-#elif SONAR_LIB == SIMPLE 
 #else 
 #error("Unexpected SONAR_LIB")
 #endif
 
-
+#if 0
 
 // this case is capricious. E.g., doesn't going to sleep if delay added
 void light_sleep2() {
@@ -73,3 +73,4 @@ void light_sleep2() {
 
 }
 
+#endif

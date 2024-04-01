@@ -1,4 +1,4 @@
-#define USE_WIFI
+
 //#include <TM1637.h>
 #include <dummy.h>
 #define USE_SERIAL
@@ -8,9 +8,15 @@
 
 
 #include "pins.h"
+#include "led_mode.h"
 #include "setup.h"
 #include "display.h"
 #include <PolledTimeout.h>
+
+#ifdef USE_WIFI
+    void setup_wifi();
+    void loop_wifi();
+#endif
 
 #define SONAR_LIB SIMPLE
 
@@ -94,15 +100,14 @@ bool IsDoorClosed() {
     return digitalRead(WAKE_UP_PIN) != 0;
 }
 
-enum LedMode {
-    LM_OFF = 0,
-    LM_SLEEP,
-    LM_LOW_BATT,
-    LM_WIFI_INIT,
-    LM_DOOR_CLOSED,
-};
 
 LedMode _ledMode = LedMode::LM_OFF;
+LedMode _lastLedMode = LedMode::LM_OFF;
+
+void SetLedMode(LedMode mode) {
+    if(_ledMode < mode)
+        _ledMode = mode;
+}
 
 void updateLed(LedMode mode) {
     switch (mode) {
@@ -128,7 +133,24 @@ void updateLed(LedMode mode) {
         delay(100);
         digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
         break;
+    case LM_FLICK:
+        uint32_t current_time = millis();
+        if (current_time - tmr_led >= 20)
+        {
+            int step = 3;
+            tmr_led = current_time;
+            if (dir)
+                led_val += step; // увеличиваем яркость
+            else
+                led_val -= step; // уменьшаем
+            if (led_val >= 255 || led_val <= 0)
+                dir = !dir; // разворачиваем
+            analogWrite(LED, getBrightCRT(led_val) / 4);
+        }
     }
+
+    _ledMode = LM_OFF;
+    _lastLedMode = mode;
 }
 
 void light_sleep(int delay_ms) {
@@ -190,9 +212,7 @@ std::tuple<int,bool> SwitchLed() {
       if (millivolts < SLEEP_VOLTAGE_MV)
           ESP.deepSleep(0);
 
-      _ledMode = LedMode::LM_LOW_BATT;
-      //set_led_mode(3);
-      //loop_led();
+      SetLedMode(LM_LOW_BATT);
       return { 125, true };
   }
 
@@ -200,21 +220,14 @@ std::tuple<int,bool> SwitchLed() {
     led_on = HAS_HUMAN(distFilt);
 
   if (led_on || led_val > 30) {
+    SetLedMode(LM_FLICK);
     tmr_led_off = current_time;
-    if (current_time - tmr_led >= 20) {
-      int step = 3;
-      tmr_led = current_time;
-      if (dir) led_val += step; // увеличиваем яркость
-      else led_val -= step;   // уменьшаем
-      if (led_val >= 255 || led_val <= 0) dir = !dir; // разворачиваем
-      analogWrite(LED, getBrightCRT(led_val) / 4);
-    }
     return { 20, false };
   }
   else {
     if (current_time - tmr_led_off > LED_OFF_DELAY) {
       //analogWrite(LED, 0);
-        _ledMode = LedMode::LM_OFF;
+        SetLedMode(LM_OFF);
       //digitalWrite(LED, LED_OFF); // turn off
     }
   }
@@ -237,10 +250,7 @@ void loop() {
         {
             _click_count++;
             // blink one time if door is just closed
-            _ledMode = LedMode::LM_DOOR_CLOSED;
-            //digitalWrite(LED, LED_ON);
-            //delay(100);
-            //digitalWrite(LED, LED_OFF);  // turn the LED off so they know the CPU isn't running
+            SetLedMode(LM_DOOR_CLOSED);
         }
         prevDoorClosed = IsDoorClosed();
     }
@@ -265,7 +275,8 @@ void loop() {
         Serial.print(", dist=");    Serial.print(distFilt);
         Serial.print(", raw=");     Serial.print(dist);
         delay(10);
-        Serial.print(", voltage: "); Serial.print(millivolts); Serial.print(", door closed: "); Serial.println(IsDoorClosed() ? 1:0); //Serial.print(", esp: "); Serial.println((int)ESP.getVcc());
+        Serial.print(", ledMode="); Serial.print(LedModeStr(_lastLedMode));
+        Serial.print(", voltage="); Serial.print(millivolts); Serial.print(", door closed: "); Serial.println(IsDoorClosed() ? 1:0); //Serial.print(", esp: "); Serial.println((int)ESP.getVcc());
 #endif
     }
 

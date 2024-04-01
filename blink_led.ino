@@ -1,4 +1,4 @@
-﻿#define LED_MODE_OFF 0
+#define LED_MODE_OFF 0
 #define LED_MODE_ON 1
 #define LED_MODE_1_2 2
 #define LED_MODE_1_8 3

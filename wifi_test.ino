@@ -1,3 +1,5 @@
+#include "setup.h"
+
 #ifdef USE_WIFI
 
 /*
@@ -8,7 +10,7 @@
     server_ip is the IP address of the ESP8266 module, will be
     printed to Serial when the module is connected.
 */
-
+#include "led_mode.h"
 #include <ESP8266WiFi.h>
 #define WIFI_  WIFI_61
 #include "Credentials.h"
@@ -21,6 +23,12 @@
 //const char* ssid = STASSID;
 const char* password = pass;
 
+// extern float distFilt = 0;
+// extern float rawDist = 0;
+// extern int millivolts;
+// extern bool led_on;
+
+
 //#ifdef USE_WIFI
 WiFiEventHandler stationConnectedHandler;
 WiFiEventHandler stationDisconnectedHandler;
@@ -32,7 +40,7 @@ int counter;
 WiFiServer server(80);
 unsigned long tmr_wifi_connect;
 void setup_wifi() {
-    _ledMode = LedMode::LM_WIFI_INIT;
+    SetLedMode(LM_WIFI_INIT);
     //set_led_mode(4);// two splash
 
     // Connect to WiFi network
@@ -149,24 +157,24 @@ void loop_wifi() {
     }
 
     if (client) {
-        Serial.println("New client");  //  "Новый клиент"
-        // создаем переменную типа «boolean»,
-        // чтобы определить конец HTTP-запроса:
+        Serial.println("New client");  //  "пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ"
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅbooleanпїЅ,
+        // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ HTTP-пїЅпїЅпїЅпїЅпїЅпїЅпїЅ:
         boolean blank_line = true;
 
         char s_raw_dist[8]; dtostrf(rawDist, 3, 0, s_raw_dist);
         char s_filt_dist[8];     dtostrf(distFilt, 3, 0, s_filt_dist);
 
         while (client.connected()) {
-            //Serial.println("client connected");  //  "Новый клиент"
+            //Serial.println("client connected");  //  "пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ"
                 // Read the first line of the request
             //String req = client.readStringUntil('\r');
             //Serial.print(F("  request: [")); Serial.print(req); Serial.println("]");
 
             if (client.available()) {
                 char c = client.read();
-                Serial.print(c);  //  "Новый клиент"
-
+                Serial.print(c);  //  "пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ"
+                uint32_t current_time = millis();
 
                 if (c == '\n' && blank_line) {
                     //getTemperature();
@@ -186,15 +194,21 @@ void loop_wifi() {
                     client.println(millivolts);
                     client.println("mV</h3><h3>counter: ");
                     client.println(counter);
-                    client.println("</h3></body></html>");
+                    client.println("</h3><h3>ledMode: ");
+                    client.println(LedModeStr(_lastLedMode));
+                    client.println("</h3><h3>led_val: ");
+                    client.println(led_val);
+                    client.println(" tmr_led_off: ");
+                    client.println(current_time - tmr_led_off);
+                    client.println("</h3><button onClick=\"window.location.reload();\">Refresh Page</button></body></html>");
                     break;
                 }
                 if (c == '\n') {
-                    // если обнаружен переход на новую строку:
+                    // пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ:
                     blank_line = true;
                 }
                 else if (c != '\r') {
-                    // если в текущей строчке найден символ:
+                    // пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ:
                     blank_line = false;
                 }
             }
